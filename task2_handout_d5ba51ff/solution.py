@@ -253,15 +253,16 @@ class MNISTNet(nn.Module):
     def __init__(self,
                 in_features: int, 
                 out_features: int,
-                dropout_p=0.15,
+                dropout_p=0.18,
                 dropout_at_eval=False
                 ):
         super().__init__()
         # TODO General_2: Play around with the network structure.
         # You could change the depth or width of the model
-        self.layer1 = nn.Linear(in_features,100)
-        self.layer2 = nn.Linear(100, 100)
-        self.layer3 = nn.Linear(100, out_features)
+        self.layer1 = nn.Linear(in_features,200)
+        self.layer2 = nn.Linear(200, 200)
+        self.layer2 = nn.Linear(200, 200)
+        self.layer3 = nn.Linear(200, out_features)
         self.dropout_p = dropout_p
         self.dropout_at_eval = dropout_at_eval
 
@@ -422,7 +423,7 @@ class SGLDTrainer(Framework):
         self.num_epochs = 300
         self.burn_in = 10
         self.sample_interval = 10   
-        self.max_size = 40
+        self.max_size = 30
         self.train_loader = torch.utils.data.DataLoader(
             dataset_train, batch_size=self.batch_size, shuffle=True, drop_last=True
             )
