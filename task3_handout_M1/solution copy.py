@@ -1,24 +1,19 @@
 import numpy as np
 from scipy.optimize import fmin_l_bfgs_b
-from sklearn.gaussian_process.kernels import *
-from sklearn.gaussian_process import GaussianProcessRegressor
 
 domain = np.array([[0, 5]])
 SAFETY_THRESHOLD = 1.2
 SEED = 0
 
-
 """ Solution """
+
+
 class BO_algo():
     def __init__(self):
-        f_kernel = 0.5*Matern(length_scale=0.5, nu=2.5)
-        v_kernel = 1.5 + np.sqrt(2)*Matern(length_scale=0.5, nu=2.5)
         """Initializes the algorithm with a parameter configuration. """
-        self.x_t = []
-        self.f_t = []
-        self.beta = 0.01
-        self.gp_f = GaussianProcessRegressor(kernel=f_kernel,alpha=0.15**2,length_scale_bounds="fixed")
-        self.gp_v = GaussianProcessRegressor(kernel=v_kernel,alpha=0.0001**2,length_scale_bounds="fixed")
+
+        # TODO: enter your code here
+        pass
 
 
     def next_recommendation(self):
@@ -30,8 +25,10 @@ class BO_algo():
         recommendation: np.ndarray
             1 x domain.shape[0] array containing the next point to evaluate
         """
-        recommendation = self.optimize_acquisition_function()
-        return recommendation
+
+        # TODO: enter your code here
+        # In implementing this function, you may use optimize_acquisition_function() defined below.
+        raise NotImplementedError
 
 
     def optimize_acquisition_function(self):
@@ -62,7 +59,6 @@ class BO_algo():
         ind = np.argmax(f_values)
         return np.atleast_2d(x_values[ind])
 
-
     def acquisition_function(self, x):
         """
         Compute the acquisition function.
@@ -77,12 +73,9 @@ class BO_algo():
         af_value: float
             Value of the acquisition function at x
         """
-        assert check_in_domain(x)
 
-        mean = np.mean(f(x))
-        std = np.std(f(x))
-
-        return mean + self.beta * std
+        # TODO: enter your code here
+        raise NotImplementedError
 
 
     def add_data_point(self, x, f, v):
@@ -98,16 +91,22 @@ class BO_algo():
         v: np.ndarray
             Model training speed
         """
-        if v > SAFETY_THRESHOLD:
-            self.x_t.append(x)
-            self.f_t.append(f)
 
+        # TODO: enter your code here
+        raise NotImplementedError
 
     def get_solution(self):
-        print(self.x_t)
-        f_x_max = np.argmax(np.array(self.f_t))
-        x_star = self.x_t[f_x_max]
-        return x_star
+        """
+        Return x_opt that is believed to be the maximizer of f.
+
+        Returns
+        -------
+        solution: np.ndarray
+            1 x domain.shape[0] array containing the optimal solution of the problem
+        """
+
+        # TODO: enter your code here
+        raise NotImplementedError
 
 
 """ Toy problem to check code works as expected """
@@ -128,7 +127,6 @@ def v(x):
     """Dummy speed"""
     return 2.0
 
-
 def get_initial_safe_point():
     """Return initial safe point"""
     x_domain = np.linspace(*domain[0], 4000)[:, None]
@@ -138,6 +136,7 @@ def get_initial_safe_point():
     np.random.shuffle(x_valid)
     x_init = x_valid[0]
     return x_init
+
 
 
 def main():
@@ -182,7 +181,7 @@ def main():
         regret = (0 - f(solution))
 
     print(f'Optimal value: 0\nProposed solution {solution}\nSolution value '
-          f'{f(solution)}\nRegret {regret}')
+          f'{f(solution)}\nRegret{regret}')
 
 
 if __name__ == "__main__":
