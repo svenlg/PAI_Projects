@@ -2,7 +2,8 @@ import numpy as np
 from scipy.optimize import fmin_l_bfgs_b
 
 domain = np.array([[0, 5]])
-
+SAFETY_THRESHOLD = 1.2
+SEED = 0
 
 """ Solution """
 
@@ -126,10 +127,28 @@ def v(x):
     """Dummy speed"""
     return 2.0
 
+def get_initial_safe_point():
+    """Return initial safe point"""
+    x_domain = np.linspace(*domain[0], 4000)[:, None]
+    c_val = np.vectorize(v)(x_domain)
+    x_valid = x_domain[c_val > SAFETY_THRESHOLD]
+    np.random.seed(SEED)
+    np.random.shuffle(x_valid)
+    x_init = x_valid[0]
+    return x_init
+
+
 
 def main():
     # Init problem
     agent = BO_algo()
+
+    # Add initial safe point
+    x_init = get_initial_safe_point()
+    obj_val = f(x_init)
+    cost_val = v(x_init)
+    agent.add_data_point(x_init, obj_val, cost_val)
+
 
     # Loop until budget is exhausted
     for j in range(20):
