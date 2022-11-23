@@ -1,5 +1,8 @@
 import numpy as np
 from scipy.optimize import fmin_l_bfgs_b
+from sklearn.gaussian_process import GaussianProcessRegressor
+from sklearn.gaussian_process.kernels import *
+from scipy.stats import norm
 
 domain = np.array([[0, 5]])
 SAFETY_THRESHOLD = 1.2
@@ -9,11 +12,17 @@ SEED = 0
 
 
 class BO_algo():
-    def __init__(self):
+    def _init_(self):
         """Initializes the algorithm with a parameter configuration. """
 
         # TODO: enter your code here
-        pass
+        maternf = 0.5*Matern(length_scale=0.5,nu=2.5,length_scale_bounds="fixed")
+        maternv = np.sqrt(2)*Matern(length_scale=0.5,nu=2.5, length_scale_bounds="fixed")
+        self.f = GaussianProcessRegressor(kernel=maternf,alpha=0.15**2)
+        self.v = GaussianProcessRegressor(kernel=maternv,alpha=0.0001**2)
+        self.x_t = []
+        self.flist = []
+        self.vlist = []
 
 
     def next_recommendation(self):
@@ -28,9 +37,46 @@ class BO_algo():
 
         # TODO: enter your code here
         # In implementing this function, you may use optimize_acquisition_function() defined below.
-        raise NotImplementedError
+
+        return self.optimize_acquisition_function()
 
 
+    '''def optimize_acquisition_function(self):
+        """
+        Optimizes the acquisition function.
+
+        Returns
+        -------
+        x_opt: np.ndarray
+            1 x domain.shape[0] array containing the point that maximize the acquisition function.
+        """
+        ind = []
+        collection_max_f = []
+
+        for i in range(3):
+
+            def objective(x):
+                return -self.acquisition_function(x)[i]
+
+            f_values = []
+            x_values = []
+
+            # Restarts the optimization 20 times and pick best solution
+            for _ in range(20):
+                x0 = domain[:, 0] + (domain[:, 1] - domain[:, 0]) * \
+                    np.random.rand(domain.shape[0])
+                result = fmin_l_bfgs_b(objective, x0=x0, bounds=domain,
+                                    approx_grad=True)
+                x_values.append(np.clip(result[0], *domain[0]))
+                f_values.append(-result[1])
+
+            collection_max_f.append(np.amax(f_values))
+            ind.append(np.argmax(f_values))
+
+        final_ind = ind[np.argmax(collection_max_f)]
+
+        return np.atleast_2d(x_values[final_ind])'''
+    
     def optimize_acquisition_function(self):
         """
         Optimizes the acquisition function.
@@ -50,13 +96,14 @@ class BO_algo():
         # Restarts the optimization 20 times and pick best solution
         for _ in range(20):
             x0 = domain[:, 0] + (domain[:, 1] - domain[:, 0]) * \
-                 np.random.rand(domain.shape[0])
+                np.random.rand(domain.shape[0])
             result = fmin_l_bfgs_b(objective, x0=x0, bounds=domain,
-                                   approx_grad=True)
+                                approx_grad=True)
             x_values.append(np.clip(result[0], *domain[0]))
             f_values.append(-result[1])
 
         ind = np.argmax(f_values)
+
         return np.atleast_2d(x_values[ind])
 
     def acquisition_function(self, x):
@@ -73,9 +120,28 @@ class BO_algo():
         af_value: float
             Value of the acquisition function at x
         """
-
         # TODO: enter your code here
-        raise NotImplementedError
+        mean_v, std_v = self.v.predict(x.reshape(-1,1), return_std=True)
+
+        if mean_v[0] + std_v[0] < SAFETY_THRESHOLD:
+            return 0 #, 0, 0
+
+        mean, std = self.f.predict(x.reshape(-1,1), return_std=True)
+        x_best = self.x_t[np.argmax(self.flist)]
+        f_best = self.f.predict(x_best.reshape(-1,1))
+        gamma = (mean[0]-f_best[0])/std[0]
+        # Expected Improvement Acquisition Function
+        a_EI = std[0]*(gamma*norm.cdf(gamma) + norm.pdf(gamma))
+
+        # Probability of Improvement Acquisition Function
+        a_PI = norm.cdf(gamma)
+
+        beta = 2
+        ucb = mean[0] + beta*std[0]
+
+        thompson = self.f.predict(x)
+
+        return ucb #ucb, a_EI, a_PI, thompson
 
 
     def add_data_point(self, x, f, v):
@@ -93,7 +159,18 @@ class BO_algo():
         """
 
         # TODO: enter your code here
-        raise NotImplementedError
+
+        if v >= SAFETY_THRESHOLD:
+            
+            self.x_t.append(x)
+            self.flist.append(f)
+            self.vlist.append(v)
+            x_data = np.array(self.x_t, dtype="object").reshape(-1,1)
+            f_data = np.array(self.flist, dtype="object").reshape(-1,1)
+            v_data = 1.5 - np.array(self.vlist, dtype="object").reshape(-1,1)
+
+            self.f.fit(x_data, f_data)
+            self.v.fit(x_data, v_data)
 
     def get_solution(self):
         """
@@ -106,7 +183,9 @@ class BO_algo():
         """
 
         # TODO: enter your code here
-        raise NotImplementedError
+        x_star = self.x_t[np.argmax(self.flist)]
+
+        return x_star
 
 
 """ Toy problem to check code works as expected """
@@ -184,5 +263,5 @@ def main():
           f'{f(solution)}\nRegret{regret}')
 
 
-if __name__ == "__main__":
+if __name__ == "_main_":
     main()

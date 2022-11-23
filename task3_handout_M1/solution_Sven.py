@@ -11,14 +11,18 @@ SEED = 0
 """ Solution """
 class BO_algo():
     def __init__(self):
-        f_kernel = 0.5*Matern(length_scale=0.5, nu=2.5)
-        v_kernel = 1.5 + np.sqrt(2)*Matern(length_scale=0.5, nu=2.5)
+        f_kernel = 0.5*Matern(length_scale=0.5, nu=2.5,length_scale_bounds="fixed")
+        v_kernel = np.sqrt(2)*Matern(length_scale=0.5, nu=2.5,length_scale_bounds="fixed")
         """Initializes the algorithm with a parameter configuration. """
-        self.x_t = []
-        self.f_t = []
+        self.x_old = []
+        self.f_old = []
+        self.v_old = []
+        self.f_sol = []
+        self.x_sol = []
+
         self.beta = 0.01
-        self.gp_f = GaussianProcessRegressor(kernel=f_kernel,alpha=0.15**2,length_scale_bounds="fixed")
-        self.gp_v = GaussianProcessRegressor(kernel=v_kernel,alpha=0.0001**2,length_scale_bounds="fixed")
+        self.gp_f = GaussianProcessRegressor(kernel=f_kernel,alpha=0.15**2)
+        self.gp_v = GaussianProcessRegressor(kernel=v_kernel,alpha=0.0001**2)
 
 
     def next_recommendation(self):
@@ -78,11 +82,15 @@ class BO_algo():
             Value of the acquisition function at x
         """
         assert check_in_domain(x)
+        x_data = x.reshape(-1,1)
+        
+        #mean_v, std_v = self.gp_v.predict(x_data, return_cov=True)
+        #if mean_v + std_v <= SAFETY_THRESHOLD:
+        #    return 0
 
-        mean = np.mean(f(x))
-        std = np.std(f(x))
-
-        return mean + self.beta * std
+        mean_f, std_f = self.gp_f.predict(x_data, return_cov=True)
+        #print(f'mean v: {mean_v}')
+        return mean_f[0] + self.beta * std_f[0]
 
 
     def add_data_point(self, x, f, v):
@@ -98,15 +106,25 @@ class BO_algo():
         v: np.ndarray
             Model training speed
         """
+
+        self.x_old.append(x)
+        self.f_old.append(f)
+        self.v_old.append(v)
+
+        x_data = np.array(self.x_old, dtype=object).reshape(-1,1)
+        f_data = np.array(self.f_old, dtype=object).reshape(-1,1)
+        v_data = 1.5 - np.array(self.v_old, dtype=object).reshape(-1,1)
+        self.gp_f.fit(x_data,f_data)
+        self.gp_v.fit(x_data,v_data)
+
         if v > SAFETY_THRESHOLD:
-            self.x_t.append(x)
-            self.f_t.append(f)
+            self.x_sol.append(x)
+            self.f_sol.append(f)
 
 
     def get_solution(self):
-        print(self.x_t)
-        f_x_max = np.argmax(np.array(self.f_t))
-        x_star = self.x_t[f_x_max]
+        f_x_max = np.argmax(np.array(self.f_sol))
+        x_star = self.x_sol[f_x_max]
         return x_star
 
 
