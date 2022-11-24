@@ -17,7 +17,8 @@ class BO_algo():
 
         # TODO: enter your code here
         maternf = 0.5*Matern(length_scale=0.5,nu=2.5,length_scale_bounds="fixed")
-        maternv = np.sqrt(2)*Matern(length_scale=0.5,nu=2.5, length_scale_bounds="fixed")
+        # constantv = ConstantKernel(constant_value=1.5, constant_value_bounds="fixed")
+        maternv = np.sqrt(2)*Matern(length_scale=0.5,nu=2.5,length_scale_bounds="fixed")
         self.f = GaussianProcessRegressor(kernel=maternf,alpha=0.15**2)
         self.v = GaussianProcessRegressor(kernel=maternv,alpha=0.0001**2)
         self.x_t = []
@@ -122,24 +123,32 @@ class BO_algo():
         """
         # TODO: enter your code here
         mean_v, std_v = self.v.predict(x.reshape(-1,1), return_std=True)
-
-        if mean_v[0] + std_v[0] < SAFETY_THRESHOLD:
-            return 0 #, 0, 0
-
         mean, std = self.f.predict(x.reshape(-1,1), return_std=True)
+
+        # if mean_v[0] + std_v[0] < SAFETY_THRESHOLD - 1.5:
+        '''if mean_v[0] < 1.5 - SAFETY_THRESHOLD:
+            c = 1
+            return mean[0] + std[0] - c #, 0, 0'''
+
         x_best = self.x_t[np.argmax(self.flist)]
         f_best = self.f.predict(x_best.reshape(-1,1))
-        gamma = (mean[0]-f_best[0])/std[0]
+        gamma = (f_best[0] - mean[0])/std[0]
         # Expected Improvement Acquisition Function
         a_EI = std[0]*(gamma*norm.cdf(gamma) + norm.pdf(gamma))
 
+        # Constraint Weighted Expected Improvement 
+        random_var = mean_v[0] - SAFETY_THRESHOLD 
+        a_CWEI = a_EI * (1 - norm.cdf(random_var,loc=mean_v[0],scale=std_v[0]))
+
         # Probability of Improvement Acquisition Function
         a_PI = norm.cdf(gamma)
+        
+        # Thompson Sampling (also an Acquisition Function Variant)
+        thompson = self.f.predict(x.reshape(-1,1))
 
-        beta = 2
+        # Upper Confidence Bound Acquisition Function
+        beta = 10000
         ucb = mean[0] + beta*std[0]
-
-        thompson = self.f.predict(x)
 
         return ucb #ucb, a_EI, a_PI, thompson
 
@@ -160,17 +169,18 @@ class BO_algo():
 
         # TODO: enter your code here
 
-        if v >= SAFETY_THRESHOLD:
+        # if v >= SAFETY_THRESHOLD:
             
-            self.x_t.append(x)
-            self.flist.append(f)
-            self.vlist.append(v)
-            x_data = np.array(self.x_t, dtype="object").reshape(-1,1)
-            f_data = np.array(self.flist, dtype="object").reshape(-1,1)
-            v_data = 1.5 - np.array(self.vlist, dtype="object").reshape(-1,1)
+        self.x_t.append(x)
+        self.flist.append(f)
+        # Subtract the const. mean here?
+        self.vlist.append(v)
+        self.x_data = np.array(self.x_t, dtype="object").reshape(-1,1)
+        self.f_data = np.array(self.flist, dtype="object").reshape(-1,1)
+        self.v_data = np.array(self.vlist, dtype="object").reshape(-1,1)
 
-            self.f.fit(x_data, f_data)
-            self.v.fit(x_data, v_data)
+        self.f.fit(self.x_data, self.f_data)
+        self.v.fit(self.x_data, self.v_data)
 
     def get_solution(self):
         """
@@ -181,11 +191,17 @@ class BO_algo():
         solution: np.ndarray
             1 x domain.shape[0] array containing the optimal solution of the problem
         """
-
         # TODO: enter your code here
-        x_star = self.x_t[np.argmax(self.flist)]
+        accept = (self.v_data >= SAFETY_THRESHOLD)
+        f_accept = self.f_data[accept]
+        x_accept = self.x_data[accept]
 
-        return x_star
+        if len(f_accept) == 0:
+            return self.optimize_acquisition_function()
+        else:
+            return x_accept[np.argmax(f_accept)]
+
+        
 
 
 """ Toy problem to check code works as expected """

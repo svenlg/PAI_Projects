@@ -94,8 +94,8 @@ class BO_algo():
         f_values = []
         x_values = []
 
-        # Restarts the optimization 20 times and pick best solution; COULD INCREASE THIS FOR SWEATY BOI GAINS 
-        for _ in range(30):
+        # Restarts the optimization 20 times and pick best solution
+        for _ in range(20):
             x0 = domain[:, 0] + (domain[:, 1] - domain[:, 0]) * \
                 np.random.rand(domain.shape[0])
             result = fmin_l_bfgs_b(objective, x0=x0, bounds=domain,
@@ -195,7 +195,6 @@ class BO_algo():
         x_accept = np.asarray(self.x_t)[accept]
         f_accept = np.asarray(self.flist)[accept]
 
-        # If no optimum is found which matchens the constraint try to use the next-best point!
         if len(f_accept) == 0:
             return self.optimize_acquisition_function()
         
