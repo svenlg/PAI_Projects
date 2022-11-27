@@ -2,12 +2,14 @@ import numpy as np
 from scipy.optimize import fmin_l_bfgs_b
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import *
+from scipy.stats import norm
 
 domain = np.array([[0, 5]])
 SAFETY_THRESHOLD = 1.2
 SEED = 0
 
 """ Solution """
+
 
 class BO_algo():
 
@@ -25,7 +27,7 @@ class BO_algo():
         self.f_sol = []
         self.x_sol = []
 
-        self.beta = 15000
+        self.beta = 10000
 
 
     def next_recommendation(self):
@@ -85,7 +87,7 @@ class BO_algo():
         """
         x_data = x.reshape(-1,1)
 
-        mean_v = self.v.predict(x_data)
+        mean_v, std_v = self.v.predict(x_data, return_std=True)
 
         if mean_v[0] < SAFETY_THRESHOLD:
             return 0
@@ -116,9 +118,9 @@ class BO_algo():
         self.f_t.append(f)
         self.v_t.append(v)
 
-        x_data = np.asarray(self.x_t, dtype="object").reshape(-1,1)
-        f_data = np.asarray(self.f_t, dtype="object").reshape(-1,1)
-        v_data = np.asarray(self.v_t, dtype="object").reshape(-1,1)
+        x_data = np.array(self.x_t, dtype="object").reshape(-1,1)
+        f_data = np.array(self.f_t, dtype="object").reshape(-1,1)
+        v_data = np.array(self.v_t, dtype="object").reshape(-1,1)
 
         self.f.fit(x_data, f_data)
         self.v.fit(x_data, v_data)
@@ -138,7 +140,7 @@ class BO_algo():
         """
 
         # If no optimum is found which matchens the constraint try to use the next-best point!
-        if len(self.f_sol) == 0:
+        if len(self.f_old) == 0:
             return self.optimize_acquisition_function()
         
         f_x_max = np.argmax(np.array(self.f_sol))

@@ -12,14 +12,15 @@ SEED = 0
 
 
 class BO_algo():
-    def _init_(self):
+    def __init__(self):
         """Initializes the algorithm with a parameter configuration. """
 
         # TODO: enter your code here
         maternf = 0.5*Matern(length_scale=0.5,nu=2.5,length_scale_bounds="fixed")
-        maternv = np.sqrt(2)*Matern(length_scale=0.5,nu=2.5, length_scale_bounds="fixed")
-        self.f = GaussianProcessRegressor(kernel=maternf,alpha=0.15**2)
-        self.v = GaussianProcessRegressor(kernel=maternv,alpha=0.0001**2)
+        # constantv = ConstantKernel(constant_value=1.5, constant_value_bounds="fixed")
+        maternv = np.sqrt(2)*Matern(length_scale=0.5,nu=2.5,length_scale_bounds="fixed")
+        self.f = GaussianProcessRegressor(kernel=maternf,alpha=0.15)
+        self.v = GaussianProcessRegressor(kernel=maternv,alpha=0.0001)
         self.x_t = []
         self.flist = []
         self.vlist = []
@@ -28,7 +29,6 @@ class BO_algo():
     def next_recommendation(self):
         """
         Recommend the next input to sample.
-
         Returns
         -------
         recommendation: np.ndarray
@@ -44,7 +44,6 @@ class BO_algo():
     '''def optimize_acquisition_function(self):
         """
         Optimizes the acquisition function.
-
         Returns
         -------
         x_opt: np.ndarray
@@ -52,15 +51,11 @@ class BO_algo():
         """
         ind = []
         collection_max_f = []
-
         for i in range(3):
-
             def objective(x):
                 return -self.acquisition_function(x)[i]
-
             f_values = []
             x_values = []
-
             # Restarts the optimization 20 times and pick best solution
             for _ in range(20):
                 x0 = domain[:, 0] + (domain[:, 1] - domain[:, 0]) * \
@@ -69,18 +64,14 @@ class BO_algo():
                                     approx_grad=True)
                 x_values.append(np.clip(result[0], *domain[0]))
                 f_values.append(-result[1])
-
             collection_max_f.append(np.amax(f_values))
             ind.append(np.argmax(f_values))
-
         final_ind = ind[np.argmax(collection_max_f)]
-
         return np.atleast_2d(x_values[final_ind])'''
     
     def optimize_acquisition_function(self):
         """
         Optimizes the acquisition function.
-
         Returns
         -------
         x_opt: np.ndarray
@@ -93,8 +84,8 @@ class BO_algo():
         f_values = []
         x_values = []
 
-        # Restarts the optimization 20 times and pick best solution
-        for _ in range(20):
+        # Restarts the optimization 20 times and pick best solution; COULD INCREASE THIS FOR SWEATY BOI GAINS 
+        for _ in range(30):
             x0 = domain[:, 0] + (domain[:, 1] - domain[:, 0]) * \
                 np.random.rand(domain.shape[0])
             result = fmin_l_bfgs_b(objective, x0=x0, bounds=domain,
@@ -109,12 +100,10 @@ class BO_algo():
     def acquisition_function(self, x):
         """
         Compute the acquisition function.
-
         Parameters
         ----------
         x: np.ndarray
             x in domain of f
-
         Returns
         ------
         af_value: float
@@ -123,23 +112,31 @@ class BO_algo():
         # TODO: enter your code here
         mean_v, std_v = self.v.predict(x.reshape(-1,1), return_std=True)
 
-        if mean_v[0] + std_v[0] < SAFETY_THRESHOLD:
+        # if mean_v[0] + std_v[0] < SAFETY_THRESHOLD - 1.5:
+        if mean_v[0] < SAFETY_THRESHOLD:
             return 0 #, 0, 0
 
         mean, std = self.f.predict(x.reshape(-1,1), return_std=True)
+
         x_best = self.x_t[np.argmax(self.flist)]
         f_best = self.f.predict(x_best.reshape(-1,1))
-        gamma = (mean[0]-f_best[0])/std[0]
+        gamma = (f_best[0]-mean[0])/std[0]
         # Expected Improvement Acquisition Function
         a_EI = std[0]*(gamma*norm.cdf(gamma) + norm.pdf(gamma))
 
         # Probability of Improvement Acquisition Function
         a_PI = norm.cdf(gamma)
 
-        beta = 2
-        ucb = mean[0] + beta*std[0]
+        # Constraint Weighted Expected Improvement 
+        random_var = mean_v[0] - SAFETY_THRESHOLD 
+        a_CWEI = a_EI * (1 - norm.cdf(random_var,loc=mean_v[0],scale=std_v[0]))
+        
+        # Thompson Sampling (also an Acquisition Function Variant)
+        thompson = self.f.predict(x.reshape(-1,1))
 
-        thompson = self.f.predict(x)
+        # Upper Confidence Bound Acquisition Function
+        beta = 10000
+        ucb = mean[0] + beta*std[0]
 
         return ucb #ucb, a_EI, a_PI, thompson
 
@@ -147,7 +144,6 @@ class BO_algo():
     def add_data_point(self, x, f, v):
         """
         Add data points to the model.
-
         Parameters
         ----------
         x: np.ndarray
@@ -160,22 +156,20 @@ class BO_algo():
 
         # TODO: enter your code here
 
-        if v >= SAFETY_THRESHOLD:
-            
-            self.x_t.append(x)
-            self.flist.append(f)
-            self.vlist.append(v)
-            x_data = np.array(self.x_t, dtype="object").reshape(-1,1)
-            f_data = np.array(self.flist, dtype="object").reshape(-1,1)
-            v_data = 1.5 - np.array(self.vlist, dtype="object").reshape(-1,1)
+        # if v >= SAFETY_THRESHOLD:
+        self.x_t.append(x)
+        self.flist.append(f)
+        self.vlist.append(v)
+        x_data = np.array(self.x_t, dtype="object").reshape(-1,1)
+        f_data = np.array(self.flist, dtype="object").reshape(-1,1)
+        v_data = np.array(self.vlist, dtype="object").reshape(-1,1)
 
-            self.f.fit(x_data, f_data)
-            self.v.fit(x_data, v_data)
+        self.f.fit(x_data, f_data)
+        self.v.fit(x_data, v_data)
 
     def get_solution(self):
         """
         Return x_opt that is believed to be the maximizer of f.
-
         Returns
         -------
         solution: np.ndarray
@@ -183,7 +177,15 @@ class BO_algo():
         """
 
         # TODO: enter your code here
-        x_star = self.x_t[np.argmax(self.flist)]
+        accept = (np.asarray(self.vlist) >= SAFETY_THRESHOLD)
+        x_accept = np.asarray(self.x_t)[accept]
+        f_accept = np.asarray(self.flist)[accept]
+
+        # If no optimum is found which matchens the constraint try to use the next-best point!
+        if len(f_accept) == 0:
+            return self.optimize_acquisition_function()
+        
+        x_star = x_accept[np.argmax(f_accept)]
 
         return x_star
 
@@ -204,6 +206,9 @@ def f(x):
 
 def v(x):
     """Dummy speed"""
+    # Testing
+    if x > 2 and x < 3:
+        return 1
     return 2.0
 
 def get_initial_safe_point():
@@ -263,5 +268,6 @@ def main():
           f'{f(solution)}\nRegret{regret}')
 
 
-if __name__ == "_main_":
+if __name__ == "__main__":
     main()
+
