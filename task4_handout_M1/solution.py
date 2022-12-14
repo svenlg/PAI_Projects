@@ -1,5 +1,3 @@
-import random
-
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -11,16 +9,13 @@ from gym.spaces import Box, Discrete
 import torch
 from torch.optim import Adam
 import torch.nn as nn
+from  torch.distributions.categorical import Categorical
 
 
 def discount_cumsum(x, discount):
-    """
-    Compute  cumulative sums of vectors.
-
-    Input: [x0, x1, ..., xn]
-    Output: [x0 + discount * x1 + discount^2 * x2, x1 + discount * x2, ..., xn]
-    """
+    """Compute  cumulative sums of vectors."""
     return scipy.signal.lfilter([1], [1, float(-discount)], x[::-1], axis=0)[::-1]
+
 
 def combined_shape(length, shape=None):
     """Helper function that combines two array shapes."""
@@ -28,33 +23,17 @@ def combined_shape(length, shape=None):
         return (length,)
     return (length, shape) if np.isscalar(shape) else (length, *shape)
 
+
 def mlp(sizes, activation, output_activation=nn.Identity):
-    """
-    The basic multilayer perceptron architecture used.
+    """Produces MLP with given layers and activation function."""
+    layer = []
+    for i in range(len(sizes)-1):
+        lay = nn.Linear(sizes[i],sizes[i+1])
+        layer += [lay,activation()]
 
-    Parameters
-    ----------
-    sizes: List
-        List of feature sizes, i.e., 
-            [indput_dim, hidden_layer_1, ..., hidden_layer_n_dim, output_dim] 
-
-    activation: nn.Module
-        Activation function for the hidden layers.
-
-    output_activation: nn.Module
-        Activation function for the output layer
-
-
-    Returns
-    -------
-    mlp: nn.Module
-
-    """
-
-    # TODO: Implement this function.
-    # Hint: Use nn.Sequential to stack multiple layers of the network.
-
-    raise NotImplementedError
+    layer.pop()
+    layer.append(output_activation())
+    return nn.Sequential(*layer)
 
 
 class Actor(nn.Module):
@@ -64,78 +43,32 @@ class Actor(nn.Module):
         super().__init__()
         self.logits_net = mlp([obs_dim] + list(hidden_sizes) + [act_dim], activation)
 
-
-
     def _distribution(self, obs):
-        """
-        Takes the observation and outputs a distribution over actions.
-        
-        Parameters
-        ----------
-        obs: torch.Tensor of shape (n, obs_dim)
-            State observation.
-
-        Returns
-        -------
-        pi: torch.distributions.Distribution
-            n action distributions for each state/obs.
-
-        """
-
-        # TODO: Implement this function.
-        # Hint: The logits_net returns for a given observation the log 
-        # probabilities. You should use them to obtain a Categorical 
-        # distribution.
-        raise NotImplementedError
+        """Takes the observation and outputs a distribution over actions."""
+        assert torch.is_tensor(obs)
+        pi_log_prob = self.logits_net(obs)
+        return Categorical(logits=pi_log_prob)
 
     def _log_prob_from_distribution(self, pi, act):
         """
         Take a distribution and action, then gives the log-probability of the action
         under that distribution.
-
-        Parameters
-        ----------
-        pi: torch.distributions.Distribution
-            n action distributions.
-
-        act: torch.Tensor of shape (n, act_dim)
-            n action for which log likelihood is calculated.
-
-        Returns
-        -------
-        log_prob: torch.Tensor of shape (n, )
-            log likelihood of act.
-
         """
-
-        # TODO: Implement this function.
-
-        raise NotImplementedError
+        return pi.log_prob(act)
 
     def forward(self, obs, act=None):
         """
         Produce action distributions for given observations, and then compute the
         log-likelihood of given actions under those distributions.
-        
-        Parameters
-        ----------
-        obs: torch.Tensor of shape (n, obs_dim)
-            State observation.
-        act: (torch.Tensor of shape (n, act_dim), Optional). Defaults to None.
-            Action for which log likelihood is calculated.
-
-        Returns
-        -------
-        pi: torch.distributions.Distribution
-            n action distributions.
-        log_prob: torch.Tensor of shape (n, ) 
-            log likelihood of act.
         """
+        assert torch.is_tensor(obs)
+        pi = self._distribution(obs)
+        if act == None:
+            log_like = None
+        else:
+            log_like = self._log_prob_from_distribution(pi,act)
 
-        # TODO: Implement this function.
-        # Hint: If act is None, log_prob is also None.
-
-        raise NotImplementedError
+        return pi, log_like
 
 
 class Critic(nn.Module):
@@ -143,22 +76,12 @@ class Critic(nn.Module):
     def __init__(self, obs_dim, hidden_sizes, activation):
         super().__init__()
         self.v_net = mlp([obs_dim] + list(hidden_sizes) + [1], activation)
-        
 
     def forward(self, obs):
         """
         Return the value estimate for a given observation.
-
-        Parameters
-        ----------
-            obs: torch.Tensor of shape (n, obs_dim)
-                State observation.
-
-        Returns
-        -------
-            v: torch.Tensor of shape (n, ), i.e., where n is the number of observations.
-                Value estimate for obs.
         """
+        assert torch.is_tensor(obs)
         return torch.squeeze(self.v_net(obs), -1)
 
 
@@ -191,60 +114,35 @@ class VPGBuffer:
     def store(self, obs, act, rew, val, logp):
         """
         Append a single timestep to the buffer. This is called at each environment
-        update to store the observed outcome in
-            self.obs_buf, 
-            self.act_buf,
-            self.rew_buf,
-            self.val_buff,
-            self.logp_buff.
-        
-        Parameters
-        ----------
-        obs: torch.Tensor of shape (obs_dim, )
-            State observation.
-
-        act: torch.Tensor of shape (act_dim, )
-            Applied action.
-
-        rew: torch.Tensor of shape (1, )
-            Observed rewards.
-
-        val: torch.Tensor of shape (1, )
-            Predicted values.
-
-        logp: torch.Tensor of shape (1, )
-            log probability of act under behavior policy       
+        update to store the observed outcome in    
         """
 
         # buffer has to have room so you can store
         assert self.ptr < self.max_size
 
-        # TODO: Store new data in the respective buffers.
-
+        self.obs_buf[self.ptr] = obs
+        self.act_buf[self.ptr] = act
+        self.rew_buf[self.ptr] = rew
+        self.val_buf[self.ptr] = val
+        self.logp_buf[self.ptr] = logp
 
         # Update pointer after data is stored.
         self.ptr += 1
 
     def end_traj(self, last_val=0):
         """
-        Calculate for a trajectory 
-            1) discounted rewards-to-go, and  
-            2) TD residuals.
+        Calculate for a trajectory:
+            1) TD residuals
+            2) discounted rewards-to-go
         Store these into self.ret_buf, and self.tdres_buf respectively.
 
         The function is called after a trajectory ends.
-
-        Parameters
-        ----------
-        last_val: np.float32
-            Last value is value(state) if the rollout is cut-off at a
-            certain state, or 0 if trajectory ended uninterrupted.
         """
 
         # Get the indexes where TD residuals and discounted 
         # rewards-to-go are stored.
         path_slice = slice(self.path_start_idx, self.ptr)
-        
+
         rews = np.append(self.rew_buf[path_slice], last_val)
         vals = np.append(self.val_buf[path_slice], last_val)
 
@@ -252,21 +150,17 @@ class VPGBuffer:
             np.cumsum(self.rew_buf[self.ptr:self.path_start_idx][::-1])[::-1]
         )
 
-        # TODO: Implement TD residuals calculation.
-        # Hint: use the discount_cumsum function 
-        # self.tdres_buf[path_slice] = ...
+        # TD residuals calculation.
+        # td_res = r_t + V^π(s_t+1) − V^π(s_t)
+        delta = rews[:-1] + self.gamma*vals[1:] - vals[:-1]
+        self.tdres_buf[path_slice] = discount_cumsum(delta,self.gamma*self.lam)
 
-
-        # TODO: Implement discounted rewards-to-go calculation. 
-        # Hint: use the discount_cumsum function 
-        # self.ret_buf[path_slice] = ...
-
+        # Rewards-to-go calculation. 
+        self.ret_buf[path_slice] = discount_cumsum(rews[:-1],self.gamma)
 
         # Update the path_start_idx
         self.path_start_idx = self.ptr
-
         pass
-
 
     def get(self):
         """
@@ -293,33 +187,22 @@ class Agent:
         self.l = 2  # layer number of networks
         hidden_sizes = [self.hid]*self.l
         obs_dim = 8
-        self.actor =  Actor(obs_dim, 4, hidden_sizes, activation)
-        self.critic  = Critic(obs_dim, hidden_sizes, activation)
+        self.actor = Actor(obs_dim, 4, hidden_sizes, activation)
+        self.critic = Critic(obs_dim, hidden_sizes, activation)
 
     def step(self, state):
         """
         Take an state and return action, value function, and log-likelihood
         of chosen action.
-
-        Parameters
-        ----------
-        state: torch.Tensor of shape (obs_dim, )
-
-        Returns
-        -------
-        act: np.ndarray of (act_dim, )
-            An action sampled from the policy given a state (0, 1, 2 or 3).
-        v: np.ndarray of (1, )
-            The value function at the given state.
-        logp: np.ndarray of (1, )
-            The log-probability of the action under the policy output distribution.
         """
-        
-        # TODO: Implement this function.
-        # Hint: This function is only called during inference. You should use
-        # `torch.no_grad` to ensure that it does not interfer with the gradient computation.
+        state = torch.as_tensor(state, dtype=torch.float32)
+        with torch.no_grad():
+            pi, _ = self.actor(state)
+            act = pi.sample()
+            _, logp = self.actor(state,act)
+            v = self.critic(state)
 
-        return 0, 0, 0
+        return act.item(), v.item(), logp.item()
 
     def act(self, state):
         return self.step(state)[0]
@@ -328,24 +211,16 @@ class Agent:
         """
         Sample an action from your policy/actor.
 
-        Parameters
-        ----------
-        obs: np.ndarray of shape (obs_dim, )
-            State observation.
-
-        Returns
-        -------
-        act: np.ndarray of shape (act_dim, )
-            Action to apply.
-
         IMPORTANT: This function called by the checker to evaluate your agent.
         You SHOULD NOT change the arguments this function takes and what it outputs!
         """
-
         # TODO: Implement this function.
         # Currently, this just returns a random action.
+        obs = torch.as_tensor(obs, dtype=torch.float32)
+        pi, _ = self.actor(obs)
+        act = pi.sample()
         
-        return np.random.choice([0, 1, 2, 3])
+        return act
 
 
 def train(env, seed=0):
@@ -356,10 +231,7 @@ def train(env, seed=0):
     You SHOULD NOT change the arguments this function takes and what it outputs!
     """
     torch.manual_seed(seed)
-    random.seed(seed)
     np.random.seed(seed)
-
-    # TODO: In this function, you implement the actor and critic updates.
 
     # The observations are 8 dimensional vectors, and the actions are numbers,
     # i.e. 0-dimensional vectors (hence act_dim is an empty list).
@@ -372,9 +244,9 @@ def train(env, seed=0):
     # Training parameters
     # You may wish to change the following settings for the buffer and training
     # Number of training steps per epoch
-    steps_per_epoch = 3000
+    steps_per_epoch = 2000
     # Number of epochs to train for
-    epochs = 50
+    epochs = 75
     # The longest an episode can go on before cutting it off
     max_ep_len = 300
     # Discount factor for weighting future rewards
@@ -388,9 +260,11 @@ def train(env, seed=0):
     # Set up buffer
     buf = VPGBuffer(obs_dim, act_dim, steps_per_epoch, gamma, lam)
 
-    # Initialize the ADAM optimizer using the parameters
+    # Def Loss function for critic
+    loss_fn_critic = nn.MSELoss()
+
+    # Initialize the ADAM optimizer using the parameters 
     # of the actor and then critic networks
-    # TODO: Use these optimizers later to update the actor and critic networks.
     actor_optimizer = Adam(agent.actor.parameters(), lr=actor_lr)
     critic_optimizer = Adam(agent.critic.parameters(), lr=critic_lr)
 
@@ -400,8 +274,18 @@ def train(env, seed=0):
     # Main training loop: collect experience in env and update / log each epoch
     for epoch in range(epochs):
         ep_returns = []
+        # Saving the values and log probs with the gradient calalculation
+        value_with_grad = []
+        logp_with_grad = []
         for t in range(steps_per_epoch):
             a, v, logp = agent.step(torch.as_tensor(state, dtype=torch.float32))
+
+            _, logp_grad = agent.actor(torch.as_tensor(state, dtype=torch.float32), 
+                                       torch.as_tensor(a, dtype=torch.float32))
+            logp_with_grad.append(logp_grad)
+
+            v_grad = agent.critic(torch.as_tensor(state, dtype=torch.float32))
+            value_with_grad.append(v_grad)
 
             next_state, r, terminal = agent.env.transition(a)
             ep_ret += r
@@ -433,24 +317,33 @@ def train(env, seed=0):
         # This is the end of an epoch, so here is where you likely want to update
         # the actor and / or critic function.
 
-
-        # TODO: Implement the policy and value function updates. Hint: some of the torch code is
-        # done for you.
-
+        """
+        data = {
+            obs, act, ret, tdres (mean 0 var 1), logp
+        }
+        """
         data = buf.get()
-
+        ad = data['tdres']
+        #logp = data['logp']
+        rewards_to_go = data['ret']
+        value_with_grad_torch = torch.stack(value_with_grad)
+        logp_with_grad_torch = torch.stack(logp_with_grad)
+        
         # Do 1 policy gradient update
-        actor_optimizer.zero_grad() #reset the gradient in the actor optimizer
-
-        #Hint: you need to compute a 'loss' such that its derivative with respect to the actor
-        # parameters is the policy gradient. Then call loss.backwards() and actor_optimizer.step()
+        # Hint: you need to compute a 'loss' such that its derivative with respect 
+        # to the actor parameters is the policy gradient.
+        actor_optimizer.zero_grad() 
+        loss = torch.sum(-ad*logp_with_grad_torch)
+        loss.backward()
+        actor_optimizer.step()
 
         # We suggest to do 100 iterations of value function updates
-        for _ in range(100):
-            critic_optimizer.zero_grad()
-            #compute a loss for the value function, call loss.backwards() and then
-            #critic_optimizer.step()
-
+        # loss_fn_critic = (A - r - gamma G old)^2
+        #for _ in range(100):
+        critic_optimizer.zero_grad()
+        loss = loss_fn_critic(value_with_grad_torch, rewards_to_go)
+        loss.backward()
+        critic_optimizer.step()
 
     return agent
 
@@ -501,6 +394,7 @@ def main():
             print("Saved video of 10 episodes to 'policy.mp4'.")
     env.close()
     print(f"Average return: {np.mean(returns):.2f}")
+
 
 if __name__ == "__main__":
     main()
